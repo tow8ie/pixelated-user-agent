@@ -23,6 +23,8 @@ from twisted.internet import ssl
 from OpenSSL import SSL
 from OpenSSL import crypto
 
+from leap.common.events import server as events_server
+
 from pixelated.adapter.model.mail import InputMail
 from pixelated.config import arguments
 from pixelated.config.services import Services
@@ -58,8 +60,6 @@ def start_user_agent(root_resource, leap_home, leap_session):
         services.draft_service,
         services.feedback_service)
 
-    # soledad needs lots of threads
-    reactor.threadpool.adjustPoolsize(5, 15)
     log.info('Done, the user agent is ready to be used')
 
 
@@ -82,21 +82,35 @@ def initialize():
     log.info('Starting the Pixelated user agent')
     args = arguments.parse_user_agent_args()
     logger.init(debug=args.debug)
-    resource = RootResource()
+    events_server.ensure_server()
 
-    start_site(args, resource)
+    resource_user1 = RootResource()
+    resource_user2 = RootResource()
 
-    deferred = initialize_leap(args.leap_provider_cert,
-                               args.leap_provider_cert_fingerprint,
-                               args.credentials_file,
-                               args.organization_mode,
-                               args.leap_home)
+    start_site(args, resource_user1)
+    args.port += 1
+    start_site(args, resource_user2)
 
-    deferred.addCallback(
-        lambda leap_session: start_user_agent(
-            resource,
-            args.leap_home,
-            leap_session))
+    leap_sessions = []
+    leap_sessions.append(initialize_leap(args.leap_provider_cert,
+                                         args.leap_provider_cert_fingerprint,
+                                         args.credentials_file + '_user1',
+                                         args.organization_mode,
+                                         args.leap_home))
+
+    leap_sessions.append(initialize_leap(args.leap_provider_cert,
+                                         args.leap_provider_cert_fingerprint,
+                                         args.credentials_file + '_user2',
+                                         args.organization_mode,
+                                         args.leap_home))
+
+    deferred = defer.gatherResults(leap_sessions, consumeErrors=True)
+
+    def _start_ua(leap_session):
+        start_user_agent(resource_user1, args.leap_home, leap_session[0])
+        start_user_agent(resource_user2, args.leap_home, leap_session[1])
+
+    deferred.addCallback(_start_ua)
 
     def _quit_on_error(failure):
         failure.printTraceback()
@@ -106,6 +120,11 @@ def initialize():
         register(events.SOLEDAD_INVALID_AUTH_TOKEN, lambda _: reactor.stop())
         return leap_session
 
+    def _adjust_pool_size(leap_session):
+        reactor.threadpool.adjustPoolsize(5, 15)
+        return leap_session
+
+    deferred.addCallback(_adjust_pool_size)
     deferred.addCallback(_register_shutdown_on_token_expire)
     deferred.addErrback(_quit_on_error)
 

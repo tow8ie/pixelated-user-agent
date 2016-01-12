@@ -1,6 +1,4 @@
 from __future__ import absolute_import
-from leap.common.events import (server as events_server,
-                                register, catalog as events)
 from pixelated.config import credentials
 from pixelated.bitmask_libraries.config import LeapConfig
 from pixelated.bitmask_libraries.certs import LeapCertificate
@@ -19,7 +17,6 @@ def initialize_leap(leap_provider_cert,
                     leap_home,
                     initial_sync=True):
     init_monkeypatches()
-    events_server.ensure_server()
     provider, username, password = credentials.read(organization_mode,
                                                     credentials_file)
     LeapCertificate.set_cert_and_fingerprint(leap_provider_cert,
