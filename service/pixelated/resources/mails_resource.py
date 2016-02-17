@@ -179,16 +179,18 @@ class MailsResource(BaseResource):
         return NOT_DONE_YET
 
     def render_POST(self, request):
-        def onError(error):
-            if isinstance(error.value, SMTPDownException):
-                respond_json_deferred({'message': str(error.value)}, request, status_code=503)
-            else:
-                err(error, 'something failed')
-                respond_json_deferred({'message': 'an error occurred while sending'}, request, status_code=422)
+        _mail_service = self.mail_service(request)
+        request_content_dict = json.loads(request.content.read())
 
-        deferred = self._handle_post(request)
-        deferred.addErrback(onError)
+        def respond_right_away(_):
+            respond_json_deferred({'message': 'email being sent'}, request, status_code=201)
 
+        def async_send(_):
+            self._send_email(_mail_service, request_content_dict)
+
+        d = defer.succeed(None)
+        d.addCallback(respond_right_away)
+        d.addCallback(async_send)
         return server.NOT_DONE_YET
 
     def render_PUT(self, request):
@@ -211,13 +213,9 @@ class MailsResource(BaseResource):
         defer.returnValue(content_dict)
 
     @defer.inlineCallbacks
-    def _handle_post(self, request):
-        _mail_service = self.mail_service(request)
-        content_dict = json.loads(request.content.read())
+    def _send_email(self, _mail_service, content_dict):
         with_attachment_content = yield self._fetch_attachment_contents(content_dict, _mail_service)
-
-        sent_mail = yield _mail_service.send_mail(with_attachment_content)
-        respond_json_deferred(sent_mail.as_dict(), request, status_code=201)
+        yield _mail_service.send_mail(with_attachment_content)
 
     @defer.inlineCallbacks
     def _handle_put(self, request):

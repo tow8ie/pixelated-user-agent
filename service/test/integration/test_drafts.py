@@ -13,6 +13,7 @@
 #
 # You should have received a copy of the GNU Affero General Public License
 # along with Pixelated. If not, see <http://www.gnu.org/licenses/>.
+from twisted.internet import reactor
 
 from test.support.integration import SoledadTestBase, MailBuilder
 from mockito import unstub, when, any
@@ -37,7 +38,6 @@ class DraftsTest(SoledadTestBase):
         # sends an updated version of the draft
         second_draft = MailBuilder().with_subject('Second draft').with_ident(first_draft_ident).build_json()
         deferred_res = self.post_mail(second_draft)
-
         sendmail_deferred.callback(None)  # SMTP succeeded
 
         yield deferred_res
@@ -71,7 +71,16 @@ class DraftsTest(SoledadTestBase):
         self.assertEquals(0, len(drafts))
 
     def post_mail(self, data):
+
+        def wait_for_async_send(result):
+            # wait for 4 seconds so that the async send is done... given we don't have access to the deferred
+            d = defer.Deferred()
+            reactor.callLater(4, d.callback, result)
+            return d
+
         deferred_res, req = self.post('/mails', data)
+        deferred_res.addCallback(wait_for_async_send)
+
         return deferred_res
 
     @defer.inlineCallbacks

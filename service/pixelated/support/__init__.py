@@ -26,9 +26,9 @@ def log_time(f):
 
     @wraps(f)
     def wrapper(*args, **kwds):
-        start = time.clock()
+        start = time.time()
         result = f(*args, **kwds)
-        log.info('Needed %f ms to execute %s' % ((time.clock() - start), f))
+        log.info('Needed %f s to execute %s' % ((time.time() - start), f))
 
         return result
 
@@ -38,12 +38,12 @@ def log_time(f):
 def log_time_deferred(f):
 
     def log_time(result, start):
-        log.info('after callback: Needed %f ms to execute %s' % ((time.clock() - start), f))
+        log.info('after callback: Needed %f s to execute %s' % ((time.time() - start), f))
         return result
 
     @wraps(f)
     def wrapper(*args, **kwds):
-        start = time.clock()
+        start = time.time()
         result = f(*args, **kwds)
         if isinstance(result, defer.Deferred):
             result.addCallback(log_time, start=start)
