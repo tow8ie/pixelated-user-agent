@@ -78,7 +78,7 @@ class MailSender(object):
 
     def _build_error_map(self, recipients, results):
         error_map = {}
-        for email, error in [(recipients[idx], r[1]) for idx, r in enumerate(results)]:
+        for email, error in [(recipients[idx], r[1]) for idx, r in enumerate(results) if not r[0]]:
             error_map[email] = error
         return error_map
 

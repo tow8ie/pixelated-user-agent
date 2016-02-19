@@ -28,7 +28,6 @@ import leap.mail.walk as walk
 from pixelated.adapter.model.status import Status
 from pixelated.support import date
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -180,7 +179,7 @@ class InputMail(Mail):
         return mime_multipart.as_string()
 
     @staticmethod
-    def delivery_error_template(delivery_address):
+    def delivery_error_template(delivery_address, from_address):
         return InputMail.from_dict({
             'body': "Mail undelivered for %s" % delivery_address,
             'header': {
@@ -188,7 +187,7 @@ class InputMail(Mail):
                 'cc': [],
                 'subject': "Mail undelivered for %s" % delivery_address
             }
-        })
+        }, from_address)
 
     @staticmethod
     def from_dict(mail_dict, from_address):
@@ -224,3 +223,34 @@ def welcome_mail():
     with open(os.path.join(current_path, '..', '..', 'assets', 'welcome.mail')) as mail_template_file:
         mail_template = message_from_file(mail_template_file)
     return InputMail.from_python_mail(mail_template)
+
+
+class ReturnToSenderMail(object):
+    def __init__(self, recipient, error, original_mail):
+        self._recipient = recipient
+        self._error = error
+        self._original_email = original_mail
+        self._sender = original_mail.from_sender
+
+    def create(self):
+        return InputMail.from_dict(self._content_dict(), self._mailer_daemon())
+
+    def _mailer_daemon(self):
+        domain_name = self._sender.split('@')[-1]
+        return 'mailer-daemon@%s' % domain_name
+
+    def _body(self):
+        base = "Delivery to %s recipient failed. Here is the error returned by the system: \n\n %s \n\n Please " \
+               "contact the administrator for further help.\n\n" % (self._recipient, self._error)
+        original_email = "**** Original message ****\n\n%s" % self._original_email.to_smtp_format()
+        return base + original_email
+
+    def _content_dict(self):
+        return {
+            'body': self._body(),
+            'tags': ['sent'],
+            'header': {
+                'to': [self._sender],
+                'subject': self._original_email.subject
+            }
+        }

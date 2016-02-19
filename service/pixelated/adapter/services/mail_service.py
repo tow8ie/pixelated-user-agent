@@ -16,11 +16,13 @@
 from email import encoders
 from email.mime.nonmultipart import MIMENonMultipart
 from email.mime.multipart import MIMEMultipart
+
+from leap.common import events
 from leap.mail.mail import Message
 
 from twisted.internet import defer
 
-from pixelated.adapter.model.mail import InputMail
+from pixelated.adapter.model.mail import InputMail, ReturnToSenderMail
 from pixelated.adapter.model.status import Status
 from pixelated.adapter.services.tag_service import extract_reserved_tags
 from leap.mail.adaptors.soledad import SoledadMailAdaptor
@@ -97,11 +99,29 @@ class MailService(object):
         except Exception, e:
             defer.returnValue(False)
 
+    def _smtp_send(self, mail):
+
+        def return_to_sender(error):
+            error_map = error.value.email_error_map
+            for email, error in error_map.items():
+                all_error = str(error)
+                print email, all_error[:15] if len(all_error) > 16 else all_error
+                # events.emit(events.catalog.SMTP_SEND_MESSAGE_ERROR, email, 'with the following error', error,
+                #             '*** original email ***', mail.to_smtp_format())
+                delivery_error_mail = ReturnToSenderMail(email, all_error, mail).create()
+                yield self._mail_store.add_mail('INBOX', delivery_error_mail.raw)
+
+            print '*'*100
+
+        d = self.mail_sender.sendmail(mail)
+        d.addErrback(return_to_sender)
+        return d
+
     @defer.inlineCallbacks
     def send_mail(self, content_dict):
         mail = InputMail.from_dict(content_dict, self.account_email)
         draft_id = content_dict.get('ident')
-        sent_mail = yield self.mail_sender.sendmail(mail)
+        sent_mail = yield self._smtp_send(mail)
 
         yield self.move_to_sent(draft_id, mail)
         defer.returnValue(sent_mail)

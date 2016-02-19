@@ -20,7 +20,7 @@ from email.mime.multipart import MIMEMultipart
 from twisted.trial import unittest
 
 import pixelated.support.date
-from pixelated.adapter.model.mail import InputMail
+from pixelated.adapter.model.mail import InputMail, ReturnToSenderMail
 import base64
 
 
@@ -152,3 +152,37 @@ class InputMailTest(unittest.TestCase):
 
         self.assertRegexpMatches(input_mail.raw, part_one)
         self.assertRegexpMatches(input_mail.raw, part_two)
+
+
+class ReturnToSenderMailTest(unittest.TestCase):
+
+    def setUp(self):
+        self._recipient = u'nana@dev.pixelated-project.org'
+        self._content_dict = {u'body': u'blabla',
+                              u'header': {'to': [self._recipient], u'subject': u'test'},
+                              }
+        self._smtp_error = Exception('some error')
+
+    def test_mailer_daemon_is_the_sender(self):
+        original_email = InputMail.from_dict(self._content_dict, 'ayoyo@pix.net')
+
+        return_to_sender_email = ReturnToSenderMail(self._recipient, self._smtp_error, original_email).create()
+
+        self.assertEqual('mailer-daemon@pix.net', return_to_sender_email.from_sender)
+
+    def test_original_sender_is_the_recipient(self):
+        original_sender = 'ayoyo@pix.net'
+        original_email = InputMail.from_dict(self._content_dict, original_sender)
+
+        return_to_sender_email = ReturnToSenderMail(self._recipient, self._smtp_error, original_email).create()
+
+        self.assertEqual([original_sender], return_to_sender_email.to)
+
+    def test_body_contains_original_email(self):
+        original_email = InputMail.from_dict(self._content_dict, 'ayoyo@pix.net')
+
+        return_to_sender_email = ReturnToSenderMail(self._recipient, self._smtp_error, original_email).create()
+        print '#'*100
+        print return_to_sender_email.body
+        print original_email.to_smtp_format() in return_to_sender_email.body
+        self.assertIn(original_email.to_smtp_format(), return_to_sender_email.body)

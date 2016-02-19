@@ -119,20 +119,20 @@ class MailsArchiveResource(Resource):
 
 class MailsResource(BaseResource):
 
-    def _register_smtp_error_handler(self):
-
+    def _register_smtp_error_handler(self, _mail_service):
         def on_error(event):
-            delivery_error_mail = InputMail.delivery_error_template(delivery_address=event.content)
-            self._mail_service.mailboxes.inbox.add(delivery_error_mail)
+            delivery_error_mail = InputMail.delivery_error_template(delivery_address=event.content,
+                                                                    from_address=_mail_service.account_email)
+            _mail_service.mailboxes.inbox.add(delivery_error_mail)
 
         events.register(events.catalog.SMTP_SEND_MESSAGE_ERROR, callback=on_error)
 
     def __init__(self, services_factory):
         BaseResource.__init__(self, services_factory)
-        self._register_smtp_error_handler()
 
     def getChild(self, action, request):
         _mail_service = self.mail_service(request)
+        self._register_smtp_error_handler(_mail_service)
 
         if action == 'delete':
             return MailsDeleteResource(_mail_service)
@@ -156,13 +156,14 @@ class MailsResource(BaseResource):
 
     def render_GET(self, request):
         start = time.clock()
+        _mail_service = self.mail_service(request)
+        self._register_smtp_error_handler(_mail_service)
 
         def log_after_completion(result, start):
             end = time.clock()
             log.info('Needed %f ms to render response' % (end - start))
             return result
 
-        _mail_service = self.mail_service(request)
         query, window_size, page = request.args.get('q')[0], request.args.get('w')[0], request.args.get('p')[0]
         unicode_query = to_unicode(query)
         d = _mail_service.mails(unicode_query, window_size, page)
@@ -180,6 +181,7 @@ class MailsResource(BaseResource):
 
     def render_POST(self, request):
         _mail_service = self.mail_service(request)
+        self._register_smtp_error_handler(_mail_service)
         request_content_dict = json.loads(request.content.read())
 
         def respond_right_away(_):
@@ -194,6 +196,9 @@ class MailsResource(BaseResource):
         return server.NOT_DONE_YET
 
     def render_PUT(self, request):
+        _mail_service = self.mail_service(request)
+        self._register_smtp_error_handler(_mail_service)
+
         def onError(error):
                 err(error, 'error saving draft')
                 respond_json_deferred("", request, status_code=422)
